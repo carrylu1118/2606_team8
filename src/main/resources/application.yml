@@ -4,17 +4,45 @@ spring:
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/flight_db
+    url: jdbc:mysql://localhost:3306/airport?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
     username: root
-    password: 123456
+    password: 021218
+
+  # 启动时自动执行 SQL 建表
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/init.sql
+      continue-on-error: true
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  # 实体类扫描（多个包用逗号分隔）
+  type-aliases-package: com.binair.admin.entity
+  # 如果后续需要 XML 映射文件，放开下面配置
+  # mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    # 下划线转驼峰（默认已开启，显式声明更清晰）
+    map-underscore-to-camel-case: true
+    # SQL 日志（开发阶段建议开启，便于调试）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 主键自增
+      id-type: auto
+      # 逻辑删除字段
+      # logic-delete-field: deleted
+      # logic-delete-value: 1
+      # logic-not-delete-value: 0
 
 logging:
   level:
     com:
-      sky:
-        mapper: debug
-        service: info
-        controller: info
+      binair:
+        admin:
+          mapper: debug
+          service: info
+          listener: info
 
 xml:
   path: E:\develop\flight_db
