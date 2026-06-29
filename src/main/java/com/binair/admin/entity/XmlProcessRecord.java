@@ -3,6 +3,7 @@ package com.binair.admin.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
  * XML 文件处理记录 — 映射到 xml_process_record 表
  */
 @Data
+@Builder
 @TableName("xml_process_record")
 public class XmlProcessRecord {
 

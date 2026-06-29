@@ -22,39 +22,34 @@ public class DfmeMessageService {
     private final DfmeMessageMapper dfmeMessageMapper;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * 保存 DFME 消息
-     */
     public void save(Meta meta, String bodyJson) {
-        DfmeMessage entity = new DfmeMessage();
+        DfmeMessage.DfmeMessageBuilder builder = DfmeMessage.builder()
+                .sndr(meta.getSndr())
+                .rcvr(meta.getRcvr())
+                .seqn(meta.getSeqn())
+                .ddtm(meta.getDdtm())
+                .type(meta.getType())
+                .styp(meta.getStyp())
+                .createTime(LocalDateTime.now());
 
-        // Meta 字段
-        entity.setSndr(meta.getSndr());
-        entity.setRcvr(meta.getRcvr());
-        entity.setSeqn(meta.getSeqn());
-        entity.setDdtm(meta.getDdtm());
-        entity.setType(meta.getType());
-        entity.setStyp(meta.getStyp());
-
-        // 从 body JSON 提取通用字段
         if (bodyJson != null) {
             try {
                 JsonNode body = objectMapper.readTree(bodyJson);
-                entity.setFlid(nullableText(body, "FLID"));
-                entity.setFfid(nullableText(body, "FFID"));
-                entity.setFide(nullableText(body, "FIDE"));
-                entity.setAwcd(nullableText(body, "AWCD"));
-                entity.setFlno(nullableText(body, "FLNO"));
-                entity.setMfid(nullableText(body, "MFID"));
-                entity.setMffi(nullableText(body, "MFFI"));
-                entity.setRawData(bodyJson);
+                builder.flid(nullableText(body, "FLID"))
+                        .ffid(nullableText(body, "FFID"))
+                        .fide(nullableText(body, "FIDE"))
+                        .awcd(nullableText(body, "AWCD"))
+                        .flno(nullableText(body, "FLNO"))
+                        .mfid(nullableText(body, "MFID"))
+                        .mffi(nullableText(body, "MFFI"))
+                        .rawData(bodyJson);
             } catch (Exception e) {
                 log.warn("提取 body 字段失败: {}", e.getMessage());
-                entity.setRawData(bodyJson);
+                builder.rawData(bodyJson);
             }
         }
 
-        entity.setCreateTime(LocalDateTime.now());
+        DfmeMessage entity = builder.build();
         dfmeMessageMapper.insert(entity);
         log.info("DFME-{} 写入: flid={}", entity.getStyp(), entity.getFlid());
     }

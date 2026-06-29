@@ -112,13 +112,14 @@ public class XmlFolderAlterationListener {
                 existing.setProcessTime(LocalDateTime.now());
                 processRecordMapper.updateById(existing);
             } else {
-                XmlProcessRecord record = new XmlProcessRecord();
-                record.setFileName(file.getName());
-                record.setFilePath(filePath);
-                record.setFileSize(file.length());
-                record.setFileLastModified(file.lastModified());
-                record.setProcessStatus(status);
-                record.setProcessTime(LocalDateTime.now());
+                XmlProcessRecord record = XmlProcessRecord.builder()
+                        .fileName(file.getName())
+                        .filePath(filePath)
+                        .fileSize(file.length())
+                        .fileLastModified(file.lastModified())
+                        .processStatus(status)
+                        .processTime(LocalDateTime.now())
+                        .build();
                 processRecordMapper.insert(record);
             }
         } catch (DataAccessException e) {

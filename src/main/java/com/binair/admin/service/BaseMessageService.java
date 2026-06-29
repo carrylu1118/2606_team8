@@ -22,33 +22,18 @@ public class BaseMessageService {
     private final BaseMessageMapper baseMessageMapper;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * 保存 BASE 消息
-     */
     public void save(Meta meta, String bodyJson) {
-        BaseMessage entity = new BaseMessage();
-
-        // Meta 字段
-        entity.setSndr(meta.getSndr());
-        entity.setRcvr(meta.getRcvr());
-        entity.setSeqn(meta.getSeqn());
-        entity.setDdtm(meta.getDdtm());
-        entity.setType(meta.getType());
-        entity.setStyp(meta.getStyp());
-
-        // 先全部置 null，避免 APUE 的 CODE 污染 CFIE 的 cfCode，反之亦然
-        entity.setCode(null);
-        entity.setFrcd(null);
-        entity.setApat(null);
-        entity.setCnnm(null);
-        entity.setEnnm(null);
-        entity.setAiso(null);
-        entity.setApsn(null);
-        entity.setCfCode(null);
-        entity.setCfTp(null);
-        entity.setAwcd(null);
-        entity.setStnm(null);
-        entity.setRstn(null);
+        BaseMessage.BaseMessageBuilder builder = BaseMessage.builder()
+                .sndr(meta.getSndr())
+                .rcvr(meta.getRcvr())
+                .seqn(meta.getSeqn())
+                .ddtm(meta.getDdtm())
+                .type(meta.getType())
+                .styp(meta.getStyp())
+                // 默认全 null，按 styp 填充对应字段
+                .code(null).frcd(null).apat(null).cnnm(null).ennm(null).aiso(null).apsn(null)
+                .cfCode(null).cfTp(null).awcd(null).stnm(null).rstn(null)
+                .createTime(LocalDateTime.now());
 
         if (bodyJson != null) {
             try {
@@ -56,32 +41,29 @@ public class BaseMessageService {
                 String styp = meta.getStyp();
 
                 if ("APUE".equalsIgnoreCase(styp)) {
-                    // APUE：从 APOT 取值 → 机场字段
-                    entity.setCode(nullableText(body, "CODE"));
-                    entity.setFrcd(nullableText(body, "FRCD"));
-                    entity.setApat(nullableText(body, "APAT"));
-                    entity.setCnnm(nullableText(body, "CNNM"));
-                    entity.setEnnm(nullableText(body, "ENNM"));
-                    entity.setAiso(nullableText(body, "AISO"));
-                    entity.setApsn(nullableText(body, "APSN"));
+                    builder.code(nullableText(body, "CODE"))
+                            .frcd(nullableText(body, "FRCD"))
+                            .apat(nullableText(body, "APAT"))
+                            .cnnm(nullableText(body, "CNNM"))
+                            .ennm(nullableText(body, "ENNM"))
+                            .aiso(nullableText(body, "AISO"))
+                            .apsn(nullableText(body, "APSN"));
                 } else if ("CFIE".equalsIgnoreCase(styp) || "CFUE".equalsIgnoreCase(styp)) {
-                    // CFIE/CFUE：从 CRFT 取值 → 飞机字段
-                    entity.setCfCode(nullableText(body, "CODE"));
-                    entity.setCfTp(nullableText(body, "CFTP"));
-                    entity.setAwcd(nullableText(body, "AWCD"));
-                    entity.setStnm(nullableText(body, "STNM"));
-                    entity.setRstn(nullableText(body, "RSTN"));
+                    builder.cfCode(nullableText(body, "CODE"))
+                            .cfTp(nullableText(body, "CFTP"))
+                            .awcd(nullableText(body, "AWCD"))
+                            .stnm(nullableText(body, "STNM"))
+                            .rstn(nullableText(body, "RSTN"));
                 }
-                // 其他未知 styp 只保留 raw_data，列字段全 null
 
-                entity.setRawData(bodyJson);
+                builder.rawData(bodyJson);
             } catch (Exception e) {
                 log.warn("提取 body 字段失败: {}", e.getMessage());
-                entity.setRawData(bodyJson);
+                builder.rawData(bodyJson);
             }
         }
 
-        entity.setCreateTime(LocalDateTime.now());
+        BaseMessage entity = builder.build();
         baseMessageMapper.insert(entity);
         log.info("BASE-{} 写入: {}",
                 entity.getStyp(),
