@@ -1,13 +1,14 @@
 package com.binair.admin.listener;
 
+import com.binair.admin.cache.XmlProcessCache;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -16,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * XML 文件夹监控类
  * <p>
- * 启动时先统计 XML 文件总数，再逐个处理并输出进度（当前/总数）。
+ * 启动时优先从 Redis 拿全量文件清单（不走文件系统），首次启动才 walkFileTree 并缓存清单到 Redis。
  * 之后进入 WatchService 事件循环监听新增/修改。
  */
 @Slf4j
@@ -25,12 +26,15 @@ public class XmlFolderMonitor {
     private final WatchService watchService;
     private final Path rootPath;
     private final XmlFolderAlterationListener listener;
+    private final XmlProcessCache cache;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile boolean running = false;
 
-    public XmlFolderMonitor(String folderPath, XmlFolderAlterationListener listener) throws IOException {
+    public XmlFolderMonitor(String folderPath, XmlFolderAlterationListener listener,
+                            XmlProcessCache cache) throws IOException {
         this.rootPath = Paths.get(folderPath);
         this.listener = listener;
+        this.cache = cache;
         this.watchService = FileSystems.getDefault().newWatchService();
 
         if (!Files.isDirectory(rootPath)) {
@@ -45,6 +49,7 @@ public class XmlFolderMonitor {
         }
         running = true;
 
+        // 注册所有目录（轻量，仅目录结构）
         try {
             registerDirectory(rootPath);
             Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
@@ -53,32 +58,78 @@ public class XmlFolderMonitor {
                     registerDirectory(dir);
                     return FileVisitResult.CONTINUE;
                 }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    return FileVisitResult.CONTINUE;
+                }
             });
-            log.info("开始监控目录: {}", rootPath);
         } catch (IOException e) {
-            log.error("初始化目录监控失败", e);
+            log.error("注册目录监控失败", e);
             return;
         }
 
-        scanExistingFiles();
+        if (cache.hasFileList()) {
+            // 快速路径：从 Redis 拿文件清单
+            scanFromCache();
+        } else {
+            // 首次启动：文件系统遍历
+            scanFromDisk();
+        }
+
         executor.submit(this::processEvents);
     }
 
     /**
-     * 扫描存量 XML 文件：先统计总数，再带进度逐个处理
+     * 快速路径：Redis 已有全量文件清单，从清单找未处理文件
      */
-    private void scanExistingFiles() {
-        log.info("========== 开始扫描存量 XML 文件 ==========");
+    private void scanFromCache() {
+        Set<String> allPaths = cache.getAllFilePaths();
+        AtomicInteger scanned = new AtomicInteger(0);
+        AtomicInteger processed = new AtomicInteger(0);
+        AtomicInteger skipped = new AtomicInteger(0);
 
-        // 第一遍：收集所有 .xml 文件路径
-        List<File> xmlFiles = new ArrayList<>();
+        for (String path : allPaths) {
+            scanned.incrementAndGet();
+            // 先查缓存，已处理的不调 listener（绕过 @Transactional 开销）
+            if (cache.isProcessed(path)) {
+                skipped.incrementAndGet();
+                continue;
+            }
+            File file = new File(path);
+            if (file.exists() && listener.onFileCreated(file)) {
+                processed.incrementAndGet();
+            }
+        }
+
+        log.info("扫描完成（Redis缓存）: 总数={}, 处理={}, 跳过={}, 监控已启动",
+                scanned.get(), processed.get(), skipped.get());
+    }
+
+    /**
+     * 首次启动：walkFileTree 遍历所有 .xml 并缓存全量路径到 Redis
+     */
+    private void scanFromDisk() {
+        AtomicInteger scanned = new AtomicInteger(0);
+        AtomicInteger processed = new AtomicInteger(0);
+        AtomicInteger skipped = new AtomicInteger(0);
+        Set<String> allPaths = new HashSet<>();
+
         try {
             Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path filePath, BasicFileAttributes attrs) {
                     File file = filePath.toFile();
                     if (file.getName().toLowerCase().endsWith(".xml")) {
-                        xmlFiles.add(file);
+                        scanned.incrementAndGet();
+                        String absPath = file.getAbsolutePath();
+                        allPaths.add(absPath);
+                        // 先查缓存再决定是否调 listener（绕开 @Transactional）
+                        if (cache.isProcessed(absPath)) {
+                            skipped.incrementAndGet();
+                        } else if (listener.onFileCreated(file)) {
+                            processed.incrementAndGet();
+                        }
                     }
                     return FileVisitResult.CONTINUE;
                 }
@@ -89,34 +140,14 @@ public class XmlFolderMonitor {
                 }
             });
         } catch (IOException e) {
-            log.error("扫描文件列表失败", e);
+            log.error("文件系统扫描失败", e);
             return;
         }
 
-        int total = xmlFiles.size();
-        log.info("共发现 {} 个 XML 文件，开始逐个处理...", total);
+        cache.storeFilePaths(allPaths);
 
-        // 第二遍：带进度处理
-        AtomicInteger processed = new AtomicInteger(0);
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger failed = new AtomicInteger(0);
-
-        for (int i = 0; i < xmlFiles.size(); i++) {
-            File file = xmlFiles.get(i);
-            int current = i + 1;
-            log.info("[{}/{}] {}", current, total, file.getName());
-            try {
-                listener.onFileCreated(file);
-                success.incrementAndGet();
-            } catch (Exception e) {
-                failed.incrementAndGet();
-                log.error("[{}/{}] 处理异常: {} - {}", current, total, file.getName(), e.getMessage());
-            }
-            processed.incrementAndGet();
-        }
-
-        log.info("========== 扫描完成: 总数={}, 成功={}, 失败={}, 监控已启动 =========",
-                total, success.get(), failed.get());
+        log.info("扫描完成（文件系统）: 总数={}, 处理={}, 跳过={}, 监控已启动",
+                scanned.get(), processed.get(), skipped.get());
     }
 
     public void stop() {
@@ -175,6 +206,7 @@ public class XmlFolderMonitor {
                 if (kind == StandardWatchEventKinds.ENTRY_CREATE) {
                     log.info("[新增] {}", file.getName());
                     listener.onFileCreated(file);
+                    cache.addFilePath(file.getAbsolutePath());
                 } else if (kind == StandardWatchEventKinds.ENTRY_MODIFY) {
                     log.info("[修改] {}", file.getName());
                     listener.onFileModified(file);

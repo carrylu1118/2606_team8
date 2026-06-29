@@ -1,5 +1,6 @@
 package com.binair.admin.listener;
 
+import com.binair.admin.cache.XmlProcessCache;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,16 +20,18 @@ public class XmlFolderListenerRunner implements CommandLineRunner {
     private String xmlFolderPath;
 
     private final XmlFolderAlterationListener listener;
+    private final XmlProcessCache cache;
     private XmlFolderMonitor monitor;
 
-    public XmlFolderListenerRunner(XmlFolderAlterationListener listener) {
+    public XmlFolderListenerRunner(XmlFolderAlterationListener listener, XmlProcessCache cache) {
         this.listener = listener;
+        this.cache = cache;
     }
 
     @Override
     public void run(String... args) {
         try {
-            monitor = new XmlFolderMonitor(xmlFolderPath, listener);
+            monitor = new XmlFolderMonitor(xmlFolderPath, listener, cache);
             monitor.start();
             log.info("XML 文件夹监控已启动，监控路径: {}", xmlFolderPath);
         } catch (Exception e) {

@@ -1,5 +1,6 @@
 package com.binair.admin.listener;
 
+import com.binair.admin.cache.XmlProcessCache;
 import com.binair.admin.entity.XmlProcessRecord;
 import com.binair.admin.entity.xml.Meta;
 import com.binair.admin.entity.xml.XmlMessage;
@@ -32,24 +33,32 @@ public class XmlFolderAlterationListener {
     private final BaseMessageService baseMessageService;
     private final DfoeMessageService dfoeMessageService;
     private final XmlProcessRecordMapper processRecordMapper;
+    private final XmlProcessCache processCache;
 
+    /**
+     * @return true 表示实际处理了，false 表示跳过
+     */
     @Transactional
-    public void onFileCreated(File file) {
-        processFile(file);
+    public boolean onFileCreated(File file) {
+        return processFile(file);
     }
 
+    /**
+     * @return true 表示实际处理了，false 表示跳过
+     */
     @Transactional
-    public void onFileModified(File file) {
-        processFile(file);
+    public boolean onFileModified(File file) {
+        return processFile(file);
     }
 
-    private void processFile(File file) {
-        String filePath = file.getAbsolutePath();
-
-        // 检查是否已处理（表不存在等异常不阻断流程）
-        if (isAlreadyProcessed(filePath)) {
-            log.info("  → 跳过（已处理）: {}", file.getName());
-            return;
+    /**
+     * @return true 处理了，false 跳过
+     */
+    private boolean processFile(File file) {
+        // 检查是否已处理（走本地 HashSet 缓存，O(1)）
+        if (processCache.isProcessed(file)) {
+            log.debug("  → 跳过（已处理）: {}", file.getName());
+            return false;
         }
 
         // 解析
@@ -57,7 +66,7 @@ public class XmlFolderAlterationListener {
         if (msg == null || msg.getMeta() == null) {
             log.warn("  → 解析失败: {}", file.getName());
             safeRecord(file, 2);
-            return;
+            return true;
         }
 
         Meta meta = msg.getMeta();
@@ -77,29 +86,15 @@ public class XmlFolderAlterationListener {
             } else {
                 log.warn("  → 未知 TYPE: {}", type);
                 safeRecord(file, 2);
-                return;
+                return true;
             }
+            processCache.markProcessed(file);
             safeRecord(file, 1);
         } catch (Exception e) {
             log.error("  → 入库失败: {} - {}", file.getName(), e.getMessage());
             safeRecord(file, 2);
         }
-    }
-
-    /**
-     * 查是否已处理，查表异常时返回 false 让流程继续
-     */
-    private boolean isAlreadyProcessed(String filePath) {
-        try {
-            XmlProcessRecord existing = processRecordMapper.selectOne(
-                    new LambdaQueryWrapper<XmlProcessRecord>().eq(XmlProcessRecord::getFilePath, filePath)
-            );
-            return existing != null && existing.getProcessStatus() == 1;
-        } catch (DataAccessException e) {
-            // 表不存在等情况，当作未处理，继续导入
-            log.debug("查询处理记录异常（将继续处理）: {}", e.getMessage());
-            return false;
-        }
+        return true;
     }
 
     /**
