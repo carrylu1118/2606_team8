@@ -1,71 +1,133 @@
 package com.binair.admin.listener;
 
-import com.binair.admin.entity.xml.BaseApueMessage;
-import com.binair.admin.entity.xml.DfmeAfidMessage;
-import com.binair.admin.entity.xml.DfoeDfdeMessage;
-import com.binair.admin.service.AfidService;
-import com.binair.admin.service.AirportService;
-import com.binair.admin.service.DeleteService;
-import com.binair.admin.utils.ParseXmlUtil;
+import com.binair.admin.entity.XmlProcessRecord;
+import com.binair.admin.entity.xml.Meta;
+import com.binair.admin.entity.xml.XmlMessage;
+import com.binair.admin.mapper.XmlProcessRecordMapper;
+import com.binair.admin.service.BaseMessageService;
+import com.binair.admin.service.DfmeMessageService;
+import com.binair.admin.service.DfoeMessageService;
+import com.binair.admin.utils.XmlParser;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
+import java.time.LocalDateTime;
 
 /**
  * XML 文件夹变更监听器
  * <p>
- * 当监控目录出现新文件时，触发导入流程
+ * 流程：查 xml_process_record → 已处理跳过 → 解析 → 分发到对应 Service → 写记录
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class XmlFolderAlterationListener {
 
-    private final AirportService airportService;
-    private final AfidService afidService;
-    private final DeleteService deleteService;
+    private final DfmeMessageService dfmeMessageService;
+    private final BaseMessageService baseMessageService;
+    private final DfoeMessageService dfoeMessageService;
+    private final XmlProcessRecordMapper processRecordMapper;
 
-    /**
-     * 文件创建事件回调
-     */
+    @Transactional
     public void onFileCreated(File file) {
-        log.info("检测到新文件: {}", file.getAbsolutePath());
-        parseXml(file);
+        processFile(file);
     }
 
-    /**
-     * 文件修改事件回调
-     */
+    @Transactional
     public void onFileModified(File file) {
-        log.info("检测到文件修改: {}", file.getAbsolutePath());
-        parseXml(file);
+        processFile(file);
+    }
+
+    private void processFile(File file) {
+        String filePath = file.getAbsolutePath();
+
+        // 检查是否已处理（表不存在等异常不阻断流程）
+        if (isAlreadyProcessed(filePath)) {
+            log.info("  → 跳过（已处理）: {}", file.getName());
+            return;
+        }
+
+        // 解析
+        XmlMessage msg = XmlParser.parse(file);
+        if (msg == null || msg.getMeta() == null) {
+            log.warn("  → 解析失败: {}", file.getName());
+            safeRecord(file, 2);
+            return;
+        }
+
+        Meta meta = msg.getMeta();
+        String type = meta.getType();
+        String bodyJson = msg.getBodyJson();
+
+        try {
+            if ("DFME".equalsIgnoreCase(type)) {
+                dfmeMessageService.save(meta, bodyJson);
+                log.info("  → DFME-{} 已写入", meta.getStyp());
+            } else if ("BASE".equalsIgnoreCase(type)) {
+                baseMessageService.save(meta, bodyJson);
+                log.info("  → BASE-{} 已写入", meta.getStyp());
+            } else if ("DFOE".equalsIgnoreCase(type)) {
+                dfoeMessageService.save(meta, bodyJson);
+                log.info("  → DFOE-{} 已写入", meta.getStyp());
+            } else {
+                log.warn("  → 未知 TYPE: {}", type);
+                safeRecord(file, 2);
+                return;
+            }
+            safeRecord(file, 1);
+        } catch (Exception e) {
+            log.error("  → 入库失败: {} - {}", file.getName(), e.getMessage());
+            safeRecord(file, 2);
+        }
     }
 
     /**
-     * 解析 XML 并根据消息类型分发到对应 Service
+     * 查是否已处理，查表异常时返回 false 让流程继续
      */
-    private void parseXml(File file) {
+    private boolean isAlreadyProcessed(String filePath) {
         try {
-            Object obj = ParseXmlUtil.parseXml(file);
-            if (obj instanceof BaseApueMessage msg) {
-                log.info("→ 类型: BASE-APUE | 机场: {} {}", msg.getApot().getCode(), msg.getApot().getCnnm());
-                airportService.save(msg);
-                log.info("→ 已写入 airport 表: {}", msg.getApot().getCode());
-            } else if (obj instanceof DfmeAfidMessage msg) {
-                log.info("→ 类型: DFME-AFID | 航班: {} afid={}", msg.getDflt().getFlid(), msg.getDflt().getAfid());
-                afidService.save(msg);
-                log.info("→ 已写入 flight 表: {}", msg.getDflt().getFlid());
-            } else if (obj instanceof DfoeDfdeMessage msg) {
-                log.info("→ 类型: DFOE-DFDE | 航班: {}", msg.getDflt().getFlid());
-                deleteService.save(msg);
-                log.info("→ 已写入 flight 表: {}", msg.getDflt().getFlid());
+            XmlProcessRecord existing = processRecordMapper.selectOne(
+                    new LambdaQueryWrapper<XmlProcessRecord>().eq(XmlProcessRecord::getFilePath, filePath)
+            );
+            return existing != null && existing.getProcessStatus() == 1;
+        } catch (DataAccessException e) {
+            // 表不存在等情况，当作未处理，继续导入
+            log.debug("查询处理记录异常（将继续处理）: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 安全写记录，表异常不影响导入
+     */
+    private void safeRecord(File file, int status) {
+        try {
+            String filePath = file.getAbsolutePath();
+            XmlProcessRecord existing = processRecordMapper.selectOne(
+                    new LambdaQueryWrapper<XmlProcessRecord>().eq(XmlProcessRecord::getFilePath, filePath)
+            );
+
+            if (existing != null) {
+                existing.setProcessStatus(status);
+                existing.setProcessTime(LocalDateTime.now());
+                processRecordMapper.updateById(existing);
             } else {
-                log.warn("→ 未知消息类型，跳过: {}", file.getName());
+                XmlProcessRecord record = new XmlProcessRecord();
+                record.setFileName(file.getName());
+                record.setFilePath(filePath);
+                record.setFileSize(file.length());
+                record.setFileLastModified(file.lastModified());
+                record.setProcessStatus(status);
+                record.setProcessTime(LocalDateTime.now());
+                processRecordMapper.insert(record);
             }
-        } catch (Exception e) {
-            log.error("✗ 解析失败: {} - {}", file.getName(), e.getMessage());
+        } catch (DataAccessException e) {
+            log.debug("写入处理记录异常: {}", e.getMessage());
         }
     }
 }
