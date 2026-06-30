@@ -789,6 +789,34 @@ CREATE TABLE TB_APRTINFO (
 );
 
 
+-- ============================================================
+-- 45. flight_master：航班主表（汇总查询和状态管理）
+-- ============================================================
+CREATE TABLE flight_master (
+                               id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                               fide VARCHAR(50) COMMENT '航班唯一标识',
+                               flid VARCHAR(20) COMMENT '航班ID',
+                               flight_no VARCHAR(20) COMMENT '航班号，如 CA1319',
+                               airline VARCHAR(10) COMMENT '航空公司二字码',
+                               departure VARCHAR(50) DEFAULT '天津' COMMENT '出发地',
+                               destination VARCHAR(50) COMMENT '目的地中文名',
+                               destination_code VARCHAR(10) COMMENT '目的地三字码',
+                               plan_depart_time DATETIME COMMENT '计划离港时间',
+                               plan_arrive_time DATETIME COMMENT '计划到港时间',
+                               actual_depart_time DATETIME COMMENT '实际离港时间',
+                               actual_arrive_time DATETIME COMMENT '实际到港时间',
+                               status_code VARCHAR(10) DEFAULT 'PLAN' COMMENT '状态编码：PLAN/DEP/ARR/DLY/CAN/RTN',
+                               status_name VARCHAR(20) DEFAULT '计划中' COMMENT '状态中文',
+                               create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                               update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                               UNIQUE KEY uk_fide (fide),
+                               INDEX idx_flight_no (flight_no),
+                               INDEX idx_status_code (status_code),
+                               INDEX idx_plan_depart_time (plan_depart_time),
+                               INDEX idx_plan_arrive_time (plan_arrive_time)
+);
+
+
 -- 1. 用户表
 CREATE TABLE sys_user (
                           id BIGINT PRIMARY KEY AUTO_INCREMENT,

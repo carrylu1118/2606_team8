@@ -1,62 +1,69 @@
 package com.binair.admin.controller;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.binair.admin.context.UserContext;
 import com.binair.admin.dto.FlightPageQueryDTO;
-import com.binair.admin.entity.User;
+import com.binair.admin.entity.FlightMaster;
 import com.binair.admin.result.PageResult;
 import com.binair.admin.result.Result;
-import com.binair.admin.service.FlightService;
+import com.binair.admin.service.FlightMasterService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.ibatis.jdbc.Null;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
+/**
+ * 航班查询控制器
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/flights")
 public class FlightController {
 
-    private final FlightService flightService;
+    private final FlightMasterService flightMasterService;
 
-    public FlightController(FlightService flightService) {
-        this.flightService = flightService;
+    public FlightController(FlightMasterService flightMasterService) {
+        this.flightMasterService = flightMasterService;
     }
 
-    @GetMapping("/page")
-    public Result<PageResult> page(@RequestBody FlightPageQueryDTO flightPageQueryDTO) {
-        // 从拦截器获取当前用户
-        User currentUser = UserContext.getUser();
-        Integer status = currentUser.getStatus();
+    /**
+     * 分页查询航班列表
+     */
+    @PostMapping("/page")
+    public Result<PageResult> page(@RequestBody FlightPageQueryDTO dto) {
+        log.info("航班分页查询：keyword={}, status={}, page={}/{}",
+                dto.getKeyword(), dto.getStatus(), dto.getPage(), dto.getPageSize());
 
-        // 判断权限：只有 status >= 1 才能查（所有登录用户都能查）
-        if (status < 1) {
-            return Result.error("权限不足");
-        }
-        //TODO 查询逻辑...
-        log.info("员工分页查询，参数为:{}",flightPageQueryDTO);
-        PageResult pageResult = flightService.page(flightPageQueryDTO);
+        Page<FlightMaster> page = new Page<>(dto.getPage(), dto.getPageSize());
+        Page<FlightMaster> result = flightMasterService.pageQuery(
+                page, dto.getKeyword(), dto.getStatus(),
+                dto.getStartDate(), dto.getEndDate()
+        );
+
+        PageResult pageResult = new PageResult(result.getTotal(), result.getRecords());
         return Result.success(pageResult);
     }
 
+    /**
+     * 航班变更申请（需要航班管理员或以上权限）
+     */
     @PostMapping("/change")
-    public Result<Null> change() {
-        User currentUser = UserContext.getUser();
-        Integer status = currentUser.getStatus();
-
-        // 只有管理员（status>=2）才能申请变更
-        if (status < 2) {
+    public Result<String> change() {
+        List<String> roles = UserContext.getRoles();
+        if (roles == null || (!roles.contains("ROLE_MANAGER") && !roles.contains("ROLE_AUDITOR"))) {
             return Result.error("权限不足，需要航班管理员或以上权限");
         }
         // TODO 变更逻辑...
         return Result.success();
     }
 
+    /**
+     * 航班变更审核（需要审核人员权限）
+     */
     @PostMapping("/audit")
-    public Result<Null> audit() {
-        User currentUser = UserContext.getUser();
-        Integer status = currentUser.getStatus();
-
-        // 只有审核人员（status>=3）才能审核
-        if (status < 3) {
+    public Result<String> audit() {
+        List<String> roles = UserContext.getRoles();
+        if (roles == null || !roles.contains("ROLE_AUDITOR")) {
             return Result.error("权限不足，需要审核人员权限");
         }
         // TODO 审核逻辑...

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * TB_STATE — 航班状态字典
  */
 @Data
-@TableName("TB_STATE")
+@TableName("tb_state")
 public class StateEntity {
     @TableId(type = IdType.AUTO)
     private Long id;

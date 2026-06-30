@@ -1,5 +1,6 @@
 package com.binair.admin.service;
 
+import com.binair.admin.entity.FlightMaster;
 import com.binair.admin.entity.MetaEntity;
 import com.binair.admin.entity.xml.Meta;
 import com.binair.admin.mapper.BaseBusinessMapper;
@@ -30,6 +31,7 @@ public class MessageRouterService {
     private final BaseBusinessMapper baseMapper;
     private final DfmeBusinessMapper dfmeMapper;
     private final DfoeBusinessMapper dfoeMapper;
+    private final FlightMasterService flightMasterService;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -126,7 +128,10 @@ public class MessageRouterService {
         }
 
         switch (styp.toUpperCase()) {
-            case "DFIE" -> dfoeMapper.insertDfie(p);
+            case "DFIE" -> {
+                dfoeMapper.insertDfie(p);
+                initFlightFromDfie(body);
+            }
             case "DFDE" -> dfoeMapper.insertDfde(p);
             case "DFDL" -> dfoeMapper.insertDfdl(p);
             default -> log.warn("未知 DFOE 子类型: {}", styp);
@@ -144,22 +149,43 @@ public class MessageRouterService {
         switch (styp.toUpperCase()) {
             // 单表（无明细）
             case "AFID" -> dfmeMapper.insertAfid(dfmeParams(metaId, body));
-            case "ARRE" -> dfmeMapper.insertArre(dfmeParams(metaId, body));
+            case "ARRE" -> {
+                dfmeMapper.insertArre(dfmeParams(metaId, body));
+                updateFlightStatus(body, "ARR", "已到达", text(body, "FRLT"));
+            }
             case "BORE" -> dfmeMapper.insertBore(dfmeParams(metaId, body));
-            case "CANE" -> dfmeMapper.insertCane(dfmeParams(metaId, body));
+            case "CANE" -> {
+                dfmeMapper.insertCane(dfmeParams(metaId, body));
+                updateFlightStatus(body, "CAN", "取消", null);
+            }
             case "CFCE" -> dfmeMapper.insertCfce(dfmeParams(metaId, body));
             case "CKIE" -> dfmeMapper.insertCkie(dfmeParams(metaId, body));
             case "CKOE" -> dfmeMapper.insertCkoe(dfmeParams(metaId, body));
-            case "DEPE" -> dfmeMapper.insertDepe(dfmeParams(metaId, body));
-            case "DLYE" -> dfmeMapper.insertDlye(dfmeParams(metaId, body));
+            case "DEPE" -> {
+                dfmeMapper.insertDepe(dfmeParams(metaId, body));
+                updateFlightStatus(body, "DEP", "已起飞", text(body, "FRTT"));
+            }
+            case "DLYE" -> {
+                dfmeMapper.insertDlye(dfmeParams(metaId, body));
+                updateFlightStatus(body, "DLY", "延误", null);
+            }
             case "FETT" -> dfmeMapper.insertFett(dfmeParams(metaId, body));
-            case "FPTT" -> dfmeMapper.insertFptt(dfmeParams(metaId, body));
+            case "FPTT" -> {
+                dfmeMapper.insertFptt(dfmeParams(metaId, body));
+                updateFlightPlanTime(body);
+            }
             case "FRTT" -> dfmeMapper.insertFrtt(dfmeParams(metaId, body));
             case "HBTT" -> dfmeMapper.insertHbtt(dfmeParams(metaId, body));
             case "LBDE" -> dfmeMapper.insertLbde(dfmeParams(metaId, body));
-            case "ONRE" -> dfmeMapper.insertOnre(dfmeParams(metaId, body));
+            case "ONRE" -> {
+                dfmeMapper.insertOnre(dfmeParams(metaId, body));
+                updateFlightStatus(body, "DEP", "已起飞", text(body, "PAST"));
+            }
             case "POKE" -> dfmeMapper.insertPoke(dfmeParams(metaId, body));
-            case "RTNE" -> dfmeMapper.insertRtne(dfmeParams(metaId, body));
+            case "RTNE" -> {
+                dfmeMapper.insertRtne(dfmeParams(metaId, body));
+                updateFlightStatus(body, "RTN", "返航", null);
+            }
 
             // 航站信息（DFME-APRTINFO 可能独立出现）
             case "APRTINFO" -> dfmeMapper.insertAprtinfo(dfmeParams(metaId, body));
@@ -179,7 +205,7 @@ public class MessageRouterService {
 
     // ==================== 主表+明细 处理方法 ====================
 
-    /** AIRL：航线变更 → 主表 + 航站列表 */
+    /** AIRL：航线变更 → 主表 + 航站列表 → 更新 flight_master 目的地 */
     private void routeAirl(JsonNode body, Long metaId) {
         Map<String, Object> main = dfmeMainParams(metaId, body);
         dfmeMapper.insertAirlMain(main);
@@ -187,6 +213,8 @@ public class MessageRouterService {
 
         JsonNode arpts = body.path("AIRL").path("ARPT");
         if (arpts.isArray()) {
+            // 最后一个航站是目的地
+            JsonNode lastArpt = arpts.get(arpts.size() - 1);
             for (JsonNode arpt : arpts) {
                 Map<String, Object> d = new HashMap<>();
                 d.put("masterId", masterId);
@@ -196,6 +224,12 @@ public class MessageRouterService {
                 d.put("fplt", text(arpt, "FPLT"));
                 d.put("apat", text(arpt, "APAT"));
                 dfmeMapper.insertAirlDetail(d);
+            }
+            // 更新航班主表目的地
+            String destCode = text(lastArpt, "APCD");
+            if (destCode != null) {
+                flightMasterService.updateDestinationByFide(
+                        text(body, "FIDE"), destCode, destCode);
             }
         }
     }
@@ -485,5 +519,83 @@ public class MessageRouterService {
             }
         }
         return null;
+    }
+
+    // ==================== FlightMaster 更新 ====================
+
+    /** 从 DFIE 事件初始化航班主表 */
+    private void initFlightFromDfie(JsonNode body) {
+        if (body == null) return;
+        String fide = text(body, "FIDE");
+        if (fide == null) return;
+
+        FlightMaster master = new FlightMaster();
+        master.setFide(fide);
+        master.setFlid(text(body, "FLID"));
+        master.setFlightNo(text(body, "FLNO"));
+        master.setAirline(text(body, "AWCD"));
+        master.setDeparture("天津");
+        master.setStatusCode("PLAN");
+        master.setStatusName("计划中");
+
+        // 从 AIRL 提取航站信息
+        JsonNode arpts = body.path("AIRL").path("ARPT");
+        if (arpts.isArray() && arpts.size() > 0) {
+            // 第一个航站 = 出发地
+            JsonNode first = arpts.get(0);
+            String firstCode = text(first, "APCD");
+            if (firstCode != null) master.setDeparture(firstCode);
+            String fptt = text(first, "FPTT");
+            if (fptt != null) master.setPlanDepartTime(parseDateTime(fptt));
+
+            // 最后一个航站 = 目的地
+            JsonNode last = arpts.get(arpts.size() - 1);
+            String lastCode = text(last, "APCD");
+            if (lastCode != null) {
+                master.setDestinationCode(lastCode);
+                master.setDestination(lastCode);
+            }
+            String fplt = text(last, "FPLT");
+            if (fplt != null) master.setPlanArriveTime(parseDateTime(fplt));
+        }
+
+        flightMasterService.updateOrInsert(master);
+    }
+
+    /** 更新航班状态（带防降级） */
+    private void updateFlightStatus(JsonNode body, String statusCode, String statusName, String actualTimeStr) {
+        String fide = text(body, "FIDE");
+        if (fide == null) return;
+
+        LocalDateTime actualTime = parseDateTime(actualTimeStr);
+        flightMasterService.updateStatusByFide(fide, statusCode, statusName, actualTime);
+    }
+
+    /** 更新航班计划时间 */
+    private void updateFlightPlanTime(JsonNode body) {
+        String fide = text(body, "FIDE");
+        if (fide == null) return;
+
+        LocalDateTime planDepart = parseDateTime(text(body, "FPTT"));
+        LocalDateTime planArrive = parseDateTime(text(body, "FPLT"));
+        flightMasterService.updatePlanTimeByFide(fide, planDepart, planArrive);
+    }
+
+    /**
+     * 解析日期时间字符串 (yyyyMMddHHmmss) 为 LocalDateTime
+     */
+    private LocalDateTime parseDateTime(String dt) {
+        if (dt == null || dt.length() < 14) return null;
+        try {
+            int y = Integer.parseInt(dt.substring(0, 4));
+            int mo = Integer.parseInt(dt.substring(4, 6));
+            int d = Integer.parseInt(dt.substring(6, 8));
+            int h = Integer.parseInt(dt.substring(8, 10));
+            int mi = Integer.parseInt(dt.substring(10, 12));
+            int s = Integer.parseInt(dt.substring(12, 14));
+            return LocalDateTime.of(y, mo, d, h, mi, s);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

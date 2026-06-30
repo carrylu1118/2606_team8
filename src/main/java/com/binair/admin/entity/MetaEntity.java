@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * TB_META — 消息头表
  */
 @Data
-@TableName("TB_META")
+@TableName("tb_meta")
 public class MetaEntity {
     @TableId(type = IdType.AUTO)
     private Long id;

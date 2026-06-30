@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * TB_FATT — 航班属性字典
  */
 @Data
-@TableName("TB_FATT")
+@TableName("tb_fatt")
 public class FattEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
