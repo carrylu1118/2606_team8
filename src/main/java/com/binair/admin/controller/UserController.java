@@ -1,6 +1,5 @@
 package com.binair.admin.controller;
 
-import com.binair.admin.constant.MessageConstant;
 import com.binair.admin.dto.UserLoginDTO;
 import com.binair.admin.dto.UserRegisterDTO;
 import com.binair.admin.entity.User;
