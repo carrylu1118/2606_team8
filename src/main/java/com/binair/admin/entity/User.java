@@ -21,7 +21,7 @@ public class User {
     private String email;
     private String phone;
     private String realName;
-    private int status;
+    private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }
