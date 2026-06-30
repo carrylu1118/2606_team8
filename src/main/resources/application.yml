@@ -56,6 +56,11 @@ logging:
           service: info
           listener: info
 
+# JWT 配置
+jwt:
+  secret-key: binair@2026#secretKey!JWT
+  expiration: 604800000
+
 xml:
   path: E:\develop\flight_db
   monitor:
