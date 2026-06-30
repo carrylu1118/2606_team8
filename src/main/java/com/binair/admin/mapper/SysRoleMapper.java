@@ -1,9 +1,12 @@
 package com.binair.admin.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.binair.admin.entity.BaseMessage;
+import com.binair.admin.entity.SysRole;
 import org.apache.ibatis.annotations.Mapper;
 
+/**
+ * 角色 Mapper
+ */
 @Mapper
-public interface BaseMessageMapper extends BaseMapper<BaseMessage> {
+public interface SysRoleMapper extends BaseMapper<SysRole> {
 }

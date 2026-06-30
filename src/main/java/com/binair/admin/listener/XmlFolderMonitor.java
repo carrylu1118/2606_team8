@@ -89,6 +89,9 @@ public class XmlFolderMonitor {
         AtomicInteger processed = new AtomicInteger(0);
         AtomicInteger skipped = new AtomicInteger(0);
 
+        // 重置计数器，准备新一轮扫描
+        listener.resetCounters();
+
         for (String path : allPaths) {
             scanned.incrementAndGet();
             // 先查缓存，已处理的不调 listener（绕过 @Transactional 开销）
@@ -102,8 +105,10 @@ public class XmlFolderMonitor {
             }
         }
 
-        log.info("扫描完成（Redis缓存）: 总数={}, 处理={}, 跳过={}, 监控已启动",
-                scanned.get(), processed.get(), skipped.get());
+        log.info("========================================");
+        log.info("扫描完成（Redis缓存）: 总数={}, 本次处理={}, 跳过={}", scanned.get(), processed.get(), skipped.get());
+        log.info("入库结果: 成功={}, 失败={}", listener.getSuccessCount(), listener.getFailCount());
+        log.info("========================================");
     }
 
     /**
@@ -114,6 +119,9 @@ public class XmlFolderMonitor {
         AtomicInteger processed = new AtomicInteger(0);
         AtomicInteger skipped = new AtomicInteger(0);
         Set<String> allPaths = new HashSet<>();
+
+        // 重置计数器，准备新一轮扫描
+        listener.resetCounters();
 
         try {
             Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
@@ -146,8 +154,10 @@ public class XmlFolderMonitor {
 
         cache.storeFilePaths(allPaths);
 
-        log.info("扫描完成（文件系统）: 总数={}, 处理={}, 跳过={}, 监控已启动",
-                scanned.get(), processed.get(), skipped.get());
+        log.info("========================================");
+        log.info("扫描完成（文件系统）: 总数={}, 本次处理={}, 跳过={}", scanned.get(), processed.get(), skipped.get());
+        log.info("入库结果: 成功={}, 失败={}", listener.getSuccessCount(), listener.getFailCount());
+        log.info("========================================");
     }
 
     public void stop() {

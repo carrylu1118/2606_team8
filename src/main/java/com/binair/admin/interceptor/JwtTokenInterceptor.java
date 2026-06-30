@@ -68,9 +68,21 @@ public class JwtTokenInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // 4、存入 ThreadLocal
+        // 检查账号是否被禁用
+        if (user.getStatus() != null && user.getStatus() == 0) {
+            log.warn("账号已被禁用：username={}", username);
+            writeUnauthorized(response, MessageConstant.ACCOUNT_LOCKED);
+            return false;
+        }
+
+        // 4、查询用户角色列表
+        java.util.List<String> roleCodes = userMapper.selectRoleCodesByUserId(user.getId());
+
+        // 5、存入 ThreadLocal
         UserContext.setUser(user);
-        log.debug("用户认证成功：username={}, userId={}", user.getUsername(), user.getId());
+        UserContext.setRoles(roleCodes);
+        log.debug("用户认证成功：username={}, userId={}, roles={}",
+                user.getUsername(), user.getId(), roleCodes);
         return true;
     }
 

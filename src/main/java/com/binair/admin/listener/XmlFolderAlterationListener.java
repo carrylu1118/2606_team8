@@ -5,9 +5,7 @@ import com.binair.admin.entity.XmlProcessRecord;
 import com.binair.admin.entity.xml.Meta;
 import com.binair.admin.entity.xml.XmlMessage;
 import com.binair.admin.mapper.XmlProcessRecordMapper;
-import com.binair.admin.service.BaseMessageService;
-import com.binair.admin.service.DfmeMessageService;
-import com.binair.admin.service.DfoeMessageService;
+import com.binair.admin.service.MessageRouterService;
 import com.binair.admin.utils.XmlParser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -18,22 +16,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
 import java.time.LocalDateTime;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * XML 文件夹变更监听器
  * <p>
- * 流程：查 xml_process_record → 已处理跳过 → 解析 → 分发到对应 Service → 写记录
+ * 流程：查 xml_process_record → 已处理跳过 → 解析 → MessageRouterService 按 TYPE+STYP 路由写入
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class XmlFolderAlterationListener {
 
-    private final DfmeMessageService dfmeMessageService;
-    private final BaseMessageService baseMessageService;
-    private final DfoeMessageService dfoeMessageService;
+    private final MessageRouterService messageRouterService;
     private final XmlProcessRecordMapper processRecordMapper;
     private final XmlProcessCache processCache;
+
+    /** 本次运行处理计数 */
+    private final AtomicInteger successCount = new AtomicInteger(0);
+    private final AtomicInteger failCount = new AtomicInteger(0);
 
     /**
      * @return true 表示实际处理了，false 表示跳过
@@ -51,6 +52,20 @@ public class XmlFolderAlterationListener {
         return processFile(file);
     }
 
+    /** 获取成功计数 */
+    public int getSuccessCount() { return successCount.get(); }
+
+    /** 获取失败计数 */
+    public int getFailCount() { return failCount.get(); }
+
+    /**
+     * 重置计数器（新一轮扫描前调用）
+     */
+    public void resetCounters() {
+        successCount.set(0);
+        failCount.set(0);
+    }
+
     /**
      * @return true 处理了，false 跳过
      */
@@ -65,33 +80,23 @@ public class XmlFolderAlterationListener {
         XmlMessage msg = XmlParser.parse(file);
         if (msg == null || msg.getMeta() == null) {
             log.warn("  → 解析失败: {}", file.getName());
+            failCount.incrementAndGet();
             safeRecord(file, 2);
             return true;
         }
 
         Meta meta = msg.getMeta();
-        String type = meta.getType();
         String bodyJson = msg.getBodyJson();
 
         try {
-            if ("DFME".equalsIgnoreCase(type)) {
-                dfmeMessageService.save(meta, bodyJson);
-                log.info("  → DFME-{} 已写入", meta.getStyp());
-            } else if ("BASE".equalsIgnoreCase(type)) {
-                baseMessageService.save(meta, bodyJson);
-                log.info("  → BASE-{} 已写入", meta.getStyp());
-            } else if ("DFOE".equalsIgnoreCase(type)) {
-                dfoeMessageService.save(meta, bodyJson);
-                log.info("  → DFOE-{} 已写入", meta.getStyp());
-            } else {
-                log.warn("  → 未知 TYPE: {}", type);
-                safeRecord(file, 2);
-                return true;
-            }
+            messageRouterService.route(meta, bodyJson);
+            log.info("  → {}-{} 已写入", meta.getType(), meta.getStyp());
+            successCount.incrementAndGet();
             processCache.markProcessed(file);
             safeRecord(file, 1);
         } catch (Exception e) {
             log.error("  → 入库失败: {} - {}", file.getName(), e.getMessage());
+            failCount.incrementAndGet();
             safeRecord(file, 2);
         }
         return true;

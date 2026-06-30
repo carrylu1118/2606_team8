@@ -1,12 +1,16 @@
 package com.binair.admin.service.Impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.binair.admin.constant.MessageConstant;
 import com.binair.admin.dto.UserLoginDTO;
 import com.binair.admin.dto.UserRegisterDTO;
+import com.binair.admin.entity.SysRole;
 import com.binair.admin.entity.User;
-import com.binair.admin.mapper.UserMapper;
+import com.binair.admin.exception.AccountLockedException;
 import com.binair.admin.exception.AccountNotFoundException;
 import com.binair.admin.exception.PasswordErrorException;
+import com.binair.admin.mapper.SysRoleMapper;
+import com.binair.admin.mapper.UserMapper;
 import com.binair.admin.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,9 +23,11 @@ import java.time.LocalDateTime;
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
+    private final SysRoleMapper sysRoleMapper;
 
-    public UserServiceImpl(UserMapper userMapper) {
+    public UserServiceImpl(UserMapper userMapper, SysRoleMapper sysRoleMapper) {
         this.userMapper = userMapper;
+        this.sysRoleMapper = sysRoleMapper;
     }
 
     /**
@@ -37,11 +43,16 @@ public class UserServiceImpl implements UserService {
         // 1、根据用户名查询数据库中的数据
         User user = userMapper.getByUsername(username);
 
-        // 2、处理各种异常情况（用户名不存在、密码不对、账号被锁定）
+        // 2、处理各种异常情况（用户名不存在、密码不对、账号被禁用）
         if (user == null) {
             log.warn("用户名不存在：username={}", username);
             throw new AccountNotFoundException(MessageConstant.ACCOUNT_NOT_FOUND);
+        }
 
+        // 检查账号是否被禁用
+        if (user.getStatus() != null && user.getStatus() == 0) {
+            log.warn("账号已被禁用：username={}", username);
+            throw new AccountLockedException(MessageConstant.ACCOUNT_LOCKED);
         }
 
         // 密码比对：对前端传入的密码进行 MD5 加密后与数据库中密码比较
@@ -79,8 +90,20 @@ public class UserServiceImpl implements UserService {
                 .createTime(LocalDateTime.now())
                 .build();
 
-        // 3、插入数据库
+        // 3、插入用户表
         userMapper.insert(user);
+
+        // 4、分配默认角色 ROLE_USER
+        LambdaQueryWrapper<SysRole> roleWrapper = new LambdaQueryWrapper<>();
+        roleWrapper.eq(SysRole::getRoleCode, "ROLE_USER");
+        SysRole defaultRole = sysRoleMapper.selectOne(roleWrapper);
+        if (defaultRole != null) {
+            userMapper.insertUserRole(user.getId(), defaultRole.getId());
+            log.info("用户 {} 已分配默认角色 ROLE_USER", user.getUsername());
+        } else {
+            log.warn("默认角色 ROLE_USER 不存在，用户 {} 未分配角色", user.getUsername());
+        }
+
         return user;
     }
 

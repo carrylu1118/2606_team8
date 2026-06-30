@@ -8,7 +8,6 @@ import com.binair.admin.service.UserService;
 import com.binair.admin.utils.JwtUtil;
 import com.binair.admin.vo.UserLoginVO;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,15 +21,17 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 public class UserController {
-
-    @Autowired
-    private UserService userService;
-
     @Value("${jwt.secret-key}")
     private String jwtSecretKey;
 
     @Value("${jwt.expiration}")
     private Long jwtExpiration;
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
 
     /**
      * 用户登录
@@ -55,7 +56,7 @@ public class UserController {
                 .token(token)
                 .build();
 
-        log.info("登录成功：username={}", user.getUsername());
+        log.info("登录成功：{}", user.getUsername());
         return Result.success(userLoginVO);
     }
 
@@ -64,14 +65,8 @@ public class UserController {
      */
     @PostMapping("/register")
     public Result<String> register(@RequestBody UserRegisterDTO userRegisterDTO) {
-        log.info("注册请求：username={}", userRegisterDTO.getUsername());
-        try {
-            userService.register(userRegisterDTO);
-            log.info("注册成功：username={}", userRegisterDTO.getUsername());
-            return Result.success("注册成功");
-        } catch (Exception e) {
-            log.warn("注册失败：{}", e.getMessage());
-            return Result.error(e.getMessage());
-        }
+        log.info("注册请求：{}", userRegisterDTO.getUsername());
+        userService.register(userRegisterDTO);
+        return Result.success("注册成功");
     }
 }
