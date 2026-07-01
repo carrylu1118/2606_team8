@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -201,6 +202,55 @@ public class FlightMasterServiceImpl extends ServiceImpl<FlightMasterMapper, Fli
         Page<FlightDynamicVO> voPage = new Page<>(pageNum, pageSize, result.getTotal());
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    @Override
+    public Map<String, Object> statusStatistics() {
+        // 直接用 SQL 查询，绕过 MyBatis-Plus 字段映射问题
+        List<Map<String, Object>> rows = baseMapper.selectMaps(
+            new LambdaQueryWrapper<FlightMaster>()
+                .select(FlightMaster::getStatusCode)
+                .isNotNull(FlightMaster::getStatusCode)
+        );
+
+        // MyBatis-Plus selectMaps 的 key 通常是列名，做兼容
+        Map<String, Long> countMap = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object val = row.get("statusCode");
+            if (val == null) val = row.get("status_code");
+            if (val instanceof String code && !code.isEmpty()) {
+                countMap.merge(code, 1L, Long::sum);
+            }
+        }
+
+        long total = countMap.values().stream().mapToLong(v -> v).sum();
+
+        String[][] info = {
+            {"PLAN", "计划中", "#409EFF"},
+            {"DEP",  "已起飞", "#67C23A"},
+            {"ARR",  "已到达", "#909399"},
+            {"DLY",  "延误",   "#E6A23C"},
+            {"CAN",  "取消",   "#F56C6C"},
+            {"RTN",  "返航",   "#9B59B6"}
+        };
+
+        java.util.List<Map<String, Object>> stats = new java.util.ArrayList<>();
+        for (String[] inf : info) {
+            Long cnt = countMap.getOrDefault(inf[0], 0L);
+            if (cnt > 0) {
+                Map<String, Object> item = new java.util.HashMap<>();
+                item.put("statusCode", inf[0]);
+                item.put("statusName", inf[1]);
+                item.put("count", cnt);
+                item.put("color", inf[2]);
+                stats.add(item);
+            }
+        }
+
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("total", total);
+        result.put("stats", stats);
+        return result;
     }
 
     // ==================== 内部辅助 ====================

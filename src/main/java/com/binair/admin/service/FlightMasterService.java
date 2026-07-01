@@ -6,6 +6,7 @@ import com.binair.admin.entity.FlightMaster;
 import com.binair.admin.vo.FlightDynamicVO;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 航班主表 Service 接口
@@ -46,4 +47,9 @@ public interface FlightMasterService extends IService<FlightMaster> {
      * 分页查询全部航班（面向旅客，无资源过滤）
      */
     Page<FlightDynamicVO> pageAllQuery(int pageNum, int pageSize, String keyword, String status, String startDate, String endDate);
+
+    /**
+     * 航班状态统计
+     */
+    Map<String, Object> statusStatistics();
 }

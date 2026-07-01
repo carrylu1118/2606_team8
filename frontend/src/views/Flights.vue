@@ -1,6 +1,7 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import axios from 'axios'
+import * as echarts from 'echarts'
 
 const flightQuery = reactive({ keyword: '', status: '', startDate: '', endDate: '', pageNum: 1, pageSize: 15 })
 const flightData = ref([])
@@ -47,11 +48,72 @@ async function fetchFlights() {
 function handleSizeChange(s) { flightQuery.pageSize = s; flightQuery.pageNum = 1; fetchFlights() }
 function handleCurrentChange(p) { flightQuery.pageNum = p; fetchFlights() }
 function handleSearch() { flightQuery.pageNum = 1; fetchFlights() }
-onMounted(() => fetchFlights())
+
+// ==================== 图表 ====================
+const chartTotal = ref(0)
+
+async function loadCharts() {
+  try {
+    const res = await axios.get('/api/flights/statistics/status')
+    if (res.data.code !== 1) return
+    const stats = res.data.data.stats
+    chartTotal.value = res.data.data.total
+
+    const names = stats.map(s => s.statusName)
+    const counts = stats.map(s => s.count)
+    const colors = stats.map(s => s.color)
+
+    await nextTick()
+
+    // 饼图
+    const pieDom = document.getElementById('pieChart')
+    if (pieDom) {
+      const pieChart = echarts.init(pieDom)
+      pieChart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} 架次 ({d}%)' },
+        series: [{
+          type: 'pie', radius: ['45%', '75%'], center: ['50%', '50%'],
+          avoidLabelOverlap: false,
+          label: { show: true, formatter: '{b}\n{d}%', fontSize: 11 },
+          emphasis: { label: { fontSize: 16, fontWeight: 'bold' } },
+          data: stats.map(s => ({ name: s.statusName, value: s.count, itemStyle: { color: s.color } }))
+        }]
+      })
+    }
+
+    // 柱状图
+    const barDom = document.getElementById('barChart')
+    if (barDom) {
+      const barChart = echarts.init(barDom)
+      barChart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
+        xAxis: { type: 'category', data: names, axisLabel: { fontSize: 11 } },
+        yAxis: { type: 'value', name: '架次' },
+        series: [{
+          type: 'bar', barWidth: '50%',
+          data: counts.map((c, i) => ({ value: c, itemStyle: { color: colors[i], borderRadius: [4,4,0,0] } }))
+        }]
+      })
+    }
+  } catch (e) { console.error('加载图表失败', e) }
+}
+
+onMounted(() => { fetchFlights(); loadCharts() })
 </script>
 
 <template>
   <div class="flights-page">
+    <!-- 统计图表 -->
+    <section class="deck">
+      <div class="deck-head"><h2>&#128200; 航班状态统计 <span class="total-tag">共 {{ chartTotal }} 架次</span></h2></div>
+      <div class="charts-row">
+        <div class="chart-box"><div id="pieChart" class="chart-dom" /></div>
+        <div class="chart-box"><div id="barChart" class="chart-dom" /></div>
+      </div>
+    </section>
+
+    <!-- 航班表格 -->
     <section class="deck">
       <div class="deck-head"><h2>&#9992; 全部航班信息</h2></div>
       <div class="filter-bar">
@@ -95,10 +157,15 @@ onMounted(() => fetchFlights())
 </template>
 
 <style scoped>
-.flights-page { display: flex; flex-direction: column; gap: 24px; }
+.flights-page { display: flex; flex-direction: column; gap: 20px; }
 .deck { background: #fff; border: 1px solid #e5e9f0; border-radius: 14px; padding: 26px 28px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.deck-head { margin-bottom: 18px; }
+.deck-head { margin-bottom: 18px; display: flex; align-items: center; gap: 12px; }
 .deck-head h2 { font-size: 18px; font-weight: 700; color: #162b42; }
+.total-tag { font-size: 13px; font-weight: 400; color: #8a9bb5; }
+
+.charts-row { display: flex; gap: 24px; }
+.chart-box { flex: 1; min-width: 0; }
+.chart-dom { width: 100%; height: 320px; }
 .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
 .fld { width: 180px; } .fld-s { width: 110px; } .fld-d { width: 145px; }
 .btn-go { background: #e85d3a; color: #fff; border: none; font-weight: 600; }

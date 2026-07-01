@@ -48,6 +48,14 @@ public class FlightController {
     }
 
     /**
+     * 航班状态统计（公开）
+     */
+    @GetMapping("/statistics/status")
+    public Result<Map<String, Object>> statusStatistics() {
+        return Result.success(flightMasterService.statusStatistics());
+    }
+
+    /**
      * 航班动态公开查询（无需登录）
      */
     @GetMapping("/dynamic")

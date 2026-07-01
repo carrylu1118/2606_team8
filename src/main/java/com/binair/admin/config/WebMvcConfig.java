@@ -27,6 +27,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/auth/register",
                         "/api/flights/dynamic",
                         "/api/flights/all",
+                        "/api/flights/statistics/**",
                         "/api/public/**"
                 );
     }
