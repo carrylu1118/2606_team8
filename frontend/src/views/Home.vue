@@ -113,15 +113,19 @@ onMounted(() => fetchFlights())
       </div>
 
       <el-table :data="flightData" v-loading="flightLoading" class="flight-table" empty-text="暂无航班数据">
-        <el-table-column prop="flightNo" label="航班号" width="95" />
-        <el-table-column prop="airline" label="航司" width="65" />
-        <el-table-column prop="departure" label="出发地" width="85" />
-        <el-table-column prop="destination" label="目的地" width="105" />
-        <el-table-column label="计划离港" width="125"><template #default="{ row }">{{ formatDateTime(row.planDepartTime) }}</template></el-table-column>
-        <el-table-column label="计划到港" width="125"><template #default="{ row }">{{ formatDateTime(row.planArriveTime) }}</template></el-table-column>
-        <el-table-column label="实际离港" width="125"><template #default="{ row }">{{ formatDateTime(row.actualDepartTime) }}</template></el-table-column>
-        <el-table-column label="实际到港" width="125"><template #default="{ row }">{{ formatDateTime(row.actualArriveTime) }}</template></el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column label="起飞时间" width="130">
+          <template #default="{ row }">{{ formatDateTime(row.actualDepartTime || row.planDepartTime) }}</template>
+        </el-table-column>
+        <el-table-column prop="flightNo" label="航班号" width="100" />
+        <el-table-column prop="airline" label="航空公司" width="90" />
+        <el-table-column prop="destination" label="目的地" width="120" />
+        <el-table-column prop="checkCounter" label="值机柜台" width="110">
+          <template #default="{ row }">{{ row.checkCounter || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="gate" label="登机口" width="90">
+          <template #default="{ row }">{{ row.gate || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
           <template #default="{ row }"><el-tag :type="statusTagType[row.statusCode] || ''" size="small">{{ row.statusName }}</el-tag></template>
         </el-table-column>
       </el-table>
