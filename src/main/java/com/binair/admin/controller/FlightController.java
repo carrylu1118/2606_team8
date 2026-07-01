@@ -7,10 +7,13 @@ import com.binair.admin.entity.FlightMaster;
 import com.binair.admin.result.PageResult;
 import com.binair.admin.result.Result;
 import com.binair.admin.service.FlightMasterService;
+import com.binair.admin.vo.FlightDynamicVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 航班查询控制器
@@ -27,7 +30,46 @@ public class FlightController {
     }
 
     /**
-     * 分页查询航班列表
+     * 全部航班公开查询（无需登录，无资源过滤）
+     */
+    @GetMapping("/all")
+    public Result<Map<String, Object>> allFlights(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        Page<FlightDynamicVO> result = flightMasterService.pageAllQuery(pageNum, pageSize, keyword, status, startDate, endDate);
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", result.getTotal());
+        data.put("records", result.getRecords());
+        return Result.success(data);
+    }
+
+    /**
+     * 航班动态公开查询（无需登录）
+     */
+    @GetMapping("/dynamic")
+    public Result<Map<String, Object>> dynamic(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize) {
+
+        Page<FlightDynamicVO> result = flightMasterService.pageDynamicQuery(
+                pageNum, pageSize, keyword, status, startDate, endDate);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", result.getTotal());
+        data.put("records", result.getRecords());
+        return Result.success(data);
+    }
+
+    /**
+     * 分页查询航班列表（管理员）
      */
     @PostMapping("/page")
     public Result<PageResult> page(@RequestBody FlightPageQueryDTO dto) {

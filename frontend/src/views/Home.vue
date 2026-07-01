@@ -2,6 +2,45 @@
 import { ref, reactive, onMounted } from 'vue'
 import axios from 'axios'
 
+// ==================== 目的地三字码 → 中文映射 ====================
+const DEST_MAP = {
+  HND:'东京羽田', PVG:'上海浦东', SZX:'深圳', TSN:'天津', HRB:'哈尔滨', ZUH:'珠海', XMN:'厦门',
+  CTU:'成都', XIY:'西安', CAN:'广州', HGH:'杭州', CSX:'长沙', PEK:'北京首都', SHE:'沈阳',
+  DLC:'大连', KMG:'昆明', NGB:'宁波', CKG:'重庆', WUH:'武汉', NKG:'南京', TNA:'济南',
+  SIA:'新加坡', ICN:'首尔仁川', NRT:'东京成田', KIX:'大阪关西', BKK:'曼谷', SIN:'新加坡',
+  LXA:'拉萨', URC:'乌鲁木齐', HAK:'海口', SYX:'三亚', NNG:'南宁', KWL:'桂林',
+  FOC:'福州', KHN:'南昌', WEH:'威海', YNT:'烟台', XUZ:'徐州', WNZ:'温州', HSN:'舟山',
+  JJN:'泉州', SWA:'汕头', ZHA:'湛江', BHY:'北海', LZH:'柳州', KWE:'贵阳', LJG:'丽江', DIG:'香格里拉',
+  HET:'呼和浩特', SHP:'秦皇岛', SHA:'上海虹桥', TXN:'黄山', XNN:'西宁', DAT:'大同', NDG:'齐齐哈尔',
+  KHI:'卡拉奇', HLP:'香港'
+}
+function destName(code, fallback) { return DEST_MAP[code] || fallback || code || '-'; }
+
+// ==================== 航班号复合格式构造 ====================
+// airline(二字码) + flightNo(原始) → 前端尝试拼成 CA-1319-20170601-D
+function buildFullFlightNo(row) {
+  const code = row.airline || '';
+  const no = row.flightNo || '';
+  // 从 planDepartFull 提取日期: "2017-06-01 08:00:00" → "20170601"
+  let datePart = '';
+  if (row.planDepartFull) {
+    const d = row.planDepartFull.replace(/\D/g, ''); // 去掉非数字
+    datePart = d.substring(0, 8); // "20170601"
+  }
+  // 默认为出港 D
+  const dir = 'D';
+  if (code && no && datePart) {
+    return `${code}-${no}-${datePart}-${dir}`;
+  }
+  return `${code}${no}` || no || '-';
+}
+
+// ==================== 状态标签 ====================
+function statusTagClass(code) {
+  const map = { PLAN:'info', DEP:'success', ARR:'success', DLY:'danger', CAN:'info', RTN:'danger' };
+  return map[code] || '';
+}
+
 const promos = ref([
   { route: '海口-中国香港', date: '2024/06/01 - 2024/09/30', cabin: '经济舱往返', price: '1,398', from: 'HAK', to: 'HKG', img: 'https://th.bing.com/th/id/R.fb64295dd9877ba77fb94e9aa76d2e9b?rik=fOF0Q6Xf0XHimw&riu=http%3a%2f%2fseopic.699pic.com%2fphoto%2f50026%2f0831.jpg_wh1200.jpg&ehk=OJhUc5bRaLVgmJDlyjcVmcEW%2bRBndsrwwmB3q75kwvM%3d&risl=&pid=ImgRaw&r=0' },
   { route: '北京-柏林',     date: '2024/06/01 - 2024/09/30', cabin: '经济舱单程', price: '3,173', from: 'PEK', to: 'BER', img: 'https://images.unsplash.com/photo-1464037866556-6812c9d1c72e?w=400&q=80' },
@@ -13,7 +52,7 @@ const promos = ref([
   { route: '海口-中国香港', date: '2024/06/01 - 2024/09/30', cabin: '经济舱往返', price: '1,398', from: 'HAK', to: 'HKG', img: 'https://images.unsplash.com/photo-1530521954074-e64f6810b32d?w=400&q=80' }
 ])
 
-const flightQuery = reactive({ keyword: '', status: '', startDate: '', endDate: '', page: 1, pageSize: 10 })
+const flightQuery = reactive({ keyword: '', status: '', startDate: '', endDate: '', pageNum: 1, pageSize: 10 })
 const flightData = ref([])
 const flightLoading = ref(false)
 const flightTotal = ref(0)
@@ -24,19 +63,17 @@ const statusOptions = [
 ]
 const statusTagType = { PLAN: '', DEP: 'success', ARR: '', DLY: 'warning', CAN: 'danger', RTN: 'danger' }
 
-function formatDateTime(dt) { if (!dt) return '-'; return dt.replace('T', ' ').substring(0, 16) }
-
 async function fetchFlights() {
   flightLoading.value = true
   try {
-    const res = await axios.post('/api/flights/page', flightQuery)
+    const res = await axios.get('/api/flights/dynamic', { params: flightQuery })
     if (res.data.code === 1) { flightData.value = res.data.data.records; flightTotal.value = res.data.data.total }
   } catch (e) { console.error(e) }
   finally { flightLoading.value = false }
 }
-function handleSizeChange(s) { flightQuery.pageSize = s; flightQuery.page = 1; fetchFlights() }
-function handleCurrentChange(p) { flightQuery.page = p; fetchFlights() }
-function handleSearch() { flightQuery.page = 1; fetchFlights() }
+function handleSizeChange(s) { flightQuery.pageSize = s; flightQuery.pageNum = 1; fetchFlights() }
+function handleCurrentChange(p) { flightQuery.pageNum = p; fetchFlights() }
+function handleSearch() { flightQuery.pageNum = 1; fetchFlights() }
 onMounted(() => fetchFlights())
 </script>
 
@@ -112,25 +149,31 @@ onMounted(() => fetchFlights())
         <el-button class="btn-go" @click="handleSearch">查询</el-button>
       </div>
 
-      <el-table :data="flightData" v-loading="flightLoading" class="flight-table" empty-text="暂无航班数据">
-        <el-table-column label="起飞时间" width="130">
-          <template #default="{ row }">{{ formatDateTime(row.actualDepartTime || row.planDepartTime) }}</template>
+      <el-table :data="flightData" v-loading="flightLoading" class="flight-table" empty-text="暂无航班数据" stripe border style="width:100%">
+        <el-table-column label="起飞时间" min-width="90">
+          <template #default="{ row }">{{ row.planDepartTime }}</template>
         </el-table-column>
-        <el-table-column prop="flightNo" label="航班号" width="100" />
-        <el-table-column prop="airline" label="航空公司" width="90" />
-        <el-table-column prop="destination" label="目的地" width="120" />
-        <el-table-column prop="checkCounter" label="值机柜台" width="110">
+        <el-table-column label="航班号" min-width="170">
+          <template #default="{ row }">{{ buildFullFlightNo(row) }}</template>
+        </el-table-column>
+        <el-table-column prop="airlineName" label="航空公司" min-width="140" />
+        <el-table-column label="目的地" min-width="110">
+          <template #default="{ row }">{{ destName(row.destinationCode, row.destination) }}</template>
+        </el-table-column>
+        <el-table-column label="值机柜台" min-width="100">
           <template #default="{ row }">{{ row.checkCounter || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gate" label="登机口" width="90">
+        <el-table-column label="登机口" min-width="90">
           <template #default="{ row }">{{ row.gate || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }"><el-tag :type="statusTagType[row.statusCode] || ''" size="small">{{ row.statusName }}</el-tag></template>
+        <el-table-column label="状态" min-width="90">
+          <template #default="{ row }">
+            <el-tag :type="statusTagClass(row.statusCode)" size="small">{{ row.statusName }}</el-tag>
+          </template>
         </el-table-column>
       </el-table>
       <div class="table-foot">
-        <el-pagination v-model:current-page="flightQuery.page" v-model:page-size="flightQuery.pageSize" :total="flightTotal" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @size-change="handleSizeChange" @current-change="handleCurrentChange" small />
+        <el-pagination v-model:current-page="flightQuery.pageNum" v-model:page-size="flightQuery.pageSize" :total="flightTotal" :page-sizes="[10,20,50]" layout="total, sizes, prev, pager, next" @size-change="handleSizeChange" @current-change="handleCurrentChange" small />
       </div>
     </section>
 
@@ -207,7 +250,9 @@ onMounted(() => fetchFlights())
 .btn-go:hover { background: var(--coral-dk); color: #fff; }
 
 /* ===== Table ===== */
-.flight-table { width: 100%; }
+.flight-table { width: 100% !important; }
+.flight-table :deep(.el-table__header) { width: 100% !important; }
+.flight-table :deep(.el-table__body)   { width: 100% !important; }
 .table-foot { margin-top: 14px; display: flex; justify-content: flex-end; }
 
 @media (max-width: 960px) {

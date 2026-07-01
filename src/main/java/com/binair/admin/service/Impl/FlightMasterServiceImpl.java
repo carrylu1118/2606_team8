@@ -3,14 +3,18 @@ package com.binair.admin.service.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.binair.admin.constant.AirlineMapping;
 import com.binair.admin.entity.FlightMaster;
 import com.binair.admin.mapper.FlightMasterMapper;
 import com.binair.admin.service.FlightMasterService;
+import com.binair.admin.vo.FlightDynamicVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 航班主表 Service 实现
@@ -126,6 +130,77 @@ public class FlightMasterServiceImpl extends ServiceImpl<FlightMasterMapper, Fli
         wrapper.orderByAsc(FlightMaster::getPlanDepartTime);
 
         return baseMapper.selectPage(page, wrapper);
+    }
+
+    @Override
+    public Page<FlightDynamicVO> pageAllQuery(int pageNum, int pageSize, String keyword, String status,
+                                               String startDate, String endDate) {
+        return doPageQuery(pageNum, pageSize, keyword, status, startDate, endDate, false);
+    }
+
+    @Override
+    public Page<FlightDynamicVO> pageDynamicQuery(int pageNum, int pageSize, String keyword, String status,
+                                                   String startDate, String endDate) {
+        return doPageQuery(pageNum, pageSize, keyword, status, startDate, endDate, true);
+    }
+
+    private Page<FlightDynamicVO> doPageQuery(int pageNum, int pageSize, String keyword, String status,
+                                               String startDate, String endDate, boolean gateFilter) {
+        // 1. 构建查询条件（实时动态 = 只有登机口和值机柜台的出港航班）
+        LambdaQueryWrapper<FlightMaster> wrapper = new LambdaQueryWrapper<>();
+        if (gateFilter) {
+            wrapper.isNotNull(FlightMaster::getGate).ne(FlightMaster::getGate, "");
+            wrapper.isNotNull(FlightMaster::getCheckCounter).ne(FlightMaster::getCheckCounter, "");
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.and(w -> w
+                    .like(FlightMaster::getFlightNo, keyword)
+                    .or()
+                    .like(FlightMaster::getDestination, keyword)
+            );
+        }
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(FlightMaster::getStatusCode, status);
+        }
+        if (startDate != null && !startDate.isBlank()) {
+            wrapper.ge(FlightMaster::getPlanDepartTime, LocalDateTime.parse(startDate + "T00:00:00"));
+        }
+        if (endDate != null && !endDate.isBlank()) {
+            wrapper.le(FlightMaster::getPlanDepartTime, LocalDateTime.parse(endDate + "T23:59:59"));
+        }
+        wrapper.orderByAsc(FlightMaster::getPlanDepartTime);
+
+        // 2. 分页查询
+        Page<FlightMaster> page = new Page<>(pageNum, pageSize);
+        Page<FlightMaster> result = baseMapper.selectPage(page, wrapper);
+
+        // 3. 转换为 VO
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+        DateTimeFormatter fullFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        List<FlightDynamicVO> voList = result.getRecords().stream().map(fm -> {
+            String departTime = fm.getPlanDepartTime() != null
+                    ? fm.getPlanDepartTime().format(timeFmt) : "-";
+            String departFull = fm.getPlanDepartTime() != null
+                    ? fm.getPlanDepartTime().format(fullFmt) : null;
+            return FlightDynamicVO.builder()
+                    .planDepartTime(departTime)
+                    .planDepartFull(departFull)
+                    .flightNo(fm.getFlightNo())
+                    .airline(fm.getAirline())
+                    .airlineName(AirlineMapping.getName(fm.getAirline()))
+                    .destination(fm.getDestination())
+                    .destinationCode(fm.getDestinationCode())
+                    .checkCounter(fm.getCheckCounter())
+                    .gate(fm.getGate())
+                    .statusCode(fm.getStatusCode())
+                    .statusName(fm.getStatusName())
+                    .build();
+        }).collect(Collectors.toList());
+
+        // 4. 组装返回
+        Page<FlightDynamicVO> voPage = new Page<>(pageNum, pageSize, result.getTotal());
+        voPage.setRecords(voList);
+        return voPage;
     }
 
     // ==================== 内部辅助 ====================

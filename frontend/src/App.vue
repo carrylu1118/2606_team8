@@ -9,20 +9,19 @@ const route = useRoute()
 const activeMenu = computed(() => route.path)
 
 const navItems = [
-  { label: '首页', path: '/' },
-  { label: '航班信息', path: '/flights' },
-  { label: '机场位置', path: '/airport-location' },
+  { label: '首页', path: '/user/' },
+  { label: '航班信息', path: '/user/flights' },
+  { label: '机场位置', path: '/user/airport-location' },
   { label: '机场', children: [
-    { label: '机场概况', path: '/airport-overview' },
-    { label: '机场设施', path: '/airport-facilities' },
-    { label: '交通指南', path: '/airport-transport' }
+    { label: '机场概况', path: '/user/airport-overview' },
+    { label: '机场通航', path: '/user/airport-routes' }
   ]},
   { label: '旅客须知', children: [
-    { label: '海关须知', path: '/customs' },
-    { label: '行李规定', path: '/luggage' },
-    { label: '出入境流程', path: '/immigration' }
+    { label: '海关须知', path: '/user/customs' },
+    { label: '行李规定', path: '/user/luggage' },
+    { label: '出入境流程', path: '/user/immigration' }
   ]},
-  { label: '超值购票', path: '/tickets' }
+  { label: '超值购票', path: '/user/tickets' }
 ]
 
 function handleMenuClick(item) { if (item.path) router.push(item.path) }
@@ -74,7 +73,46 @@ async function handleRegister() {
   finally { registerLoading.value = false }
 }
 
-function handleLogout() { token.value = ''; userInfo.value = null; localStorage.removeItem('token'); localStorage.removeItem('userInfo'); ElMessage.success('已退出') }
+function handleLogout() { token.value = ''; userInfo.value = null; localStorage.removeItem('token'); localStorage.removeItem('userInfo'); ElMessage.success('已退出'); router.push('/user/') }
+function goAdmin() { router.push('/admin/login') }
+
+// ==================== 个人信息修改 ====================
+const profileVisible = ref(false)
+const profileForm = ref({ realName: '', email: '', phone: '', oldPassword: '', newPassword: '', confirmPassword: '' })
+const profileLoading = ref(false)
+
+function openProfile() {
+  profileForm.value = {
+    realName: userInfo.value?.name || '',
+    email: '',
+    phone: '',
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  }
+  profileVisible.value = true
+}
+
+async function handleUpdateProfile() {
+  if (profileForm.value.newPassword && profileForm.value.newPassword !== profileForm.value.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致'); return
+  }
+  profileLoading.value = true
+  try {
+    // TODO: 调后端接口更新用户信息
+    ElMessage.success('个人信息已更新')
+    profileVisible.value = false
+  } catch (e) {
+    ElMessage.error('更新失败')
+  } finally { profileLoading.value = false }
+}
+
+// 头像首字母
+const avatarLetter = computed(() => {
+  const name = userInfo.value?.userName || userInfo.value?.name || ''
+  return name.charAt(0).toUpperCase() || 'U'
+})
+
 onMounted(() => { if (token.value) axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}` })
 
 const now = ref(new Date())
@@ -86,7 +124,7 @@ function formatTime(d) { return d.toLocaleString('zh-CN') }
   <div class="app-shell">
     <header class="site-header">
       <div class="header-inner">
-        <div class="brand" @click="router.push('/')">
+        <div class="brand" @click="router.push('/user/')">
           <span class="brand-icon">&#9992;</span>
           <span class="brand-text">天津滨海机场</span>
         </div>
@@ -107,8 +145,22 @@ function formatTime(d) { return d.toLocaleString('zh-CN') }
 
         <div class="header-actions">
           <template v-if="isLoggedIn">
-            <span class="user-tag">{{ userInfo?.userName || userInfo?.name }}</span>
-            <el-button text size="small" @click="handleLogout">退出</el-button>
+            <el-dropdown trigger="click" popper-class="user-drop">
+              <div class="user-avatar">{{ avatarLetter }}</div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openProfile">
+                    <el-icon><User /></el-icon>个人信息
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="goAdmin">
+                    <el-icon><Monitor /></el-icon>控制台
+                  </el-dropdown-item>
+                  <el-dropdown-item divided @click="handleLogout">
+                    <el-icon><SwitchButton /></el-icon>退出登录
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-else>
             <el-button class="btn-outline" size="small" round @click="loginVisible = true">登录</el-button>
@@ -152,8 +204,48 @@ function formatTime(d) { return d.toLocaleString('zh-CN') }
       <div class="footer-legal">CopyRight &copy; 首都机场集团有限公司 &nbsp; <a href="#">网站地图</a> &nbsp; 京ICP备2022033189号-1 &nbsp; 京公网安备11030302000001</div>
     </footer>
 
-    <el-dialog v-model="loginVisible" title="用户登录" width="400px"><!-- same --></el-dialog>
-    <el-dialog v-model="registerVisible" title="用户注册" width="460px"><!-- same --></el-dialog>
+    <el-dialog v-model="loginVisible" title="用户登录" width="400px" :close-on-click-modal="false">
+      <el-form :model="loginForm" label-width="72px" @keyup.enter="handleLogin">
+        <el-form-item label="用户名"><el-input v-model="loginForm.username" placeholder="请输入用户名" /></el-form-item>
+        <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="loginVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loginLoading" @click="handleLogin">登录</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="registerVisible" title="用户注册" width="460px" :close-on-click-modal="false">
+      <el-form :model="registerForm" label-width="80px">
+        <el-form-item label="用户名"><el-input v-model="registerForm.username" placeholder="请输入用户名" /></el-form-item>
+        <el-form-item label="密码"><el-input v-model="registerForm.password" type="password" placeholder="请输入密码" show-password /></el-form-item>
+        <el-form-item label="确认密码"><el-input v-model="registerForm.confirmPassword" type="password" placeholder="请再次输入密码" show-password /></el-form-item>
+        <el-form-item label="邮箱"><el-input v-model="registerForm.email" placeholder="请输入邮箱" /></el-form-item>
+        <el-form-item label="手机号"><el-input v-model="registerForm.phone" placeholder="请输入手机号" /></el-form-item>
+        <el-form-item label="真实姓名"><el-input v-model="registerForm.realName" placeholder="请输入真实姓名" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="registerVisible = false">取消</el-button>
+        <el-button type="primary" :loading="registerLoading" @click="handleRegister">注册</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 个人信息弹窗 -->
+    <el-dialog v-model="profileVisible" title="个人信息" width="460px" :close-on-click-modal="false">
+      <el-form :model="profileForm" label-width="80px">
+        <el-form-item label="真实姓名"><el-input v-model="profileForm.realName" placeholder="请输入真实姓名" /></el-form-item>
+        <el-form-item label="邮箱"><el-input v-model="profileForm.email" placeholder="请输入邮箱" /></el-form-item>
+        <el-form-item label="手机号"><el-input v-model="profileForm.phone" placeholder="请输入手机号" /></el-form-item>
+        <el-divider>修改密码（选填）</el-divider>
+        <el-form-item label="旧密码"><el-input v-model="profileForm.oldPassword" type="password" placeholder="请输入旧密码" show-password /></el-form-item>
+        <el-form-item label="新密码"><el-input v-model="profileForm.newPassword" type="password" placeholder="请输入新密码" show-password /></el-form-item>
+        <el-form-item label="确认密码"><el-input v-model="profileForm.confirmPassword" type="password" placeholder="请再次输入新密码" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="profileVisible = false">取消</el-button>
+        <el-button type="primary" :loading="profileLoading" @click="handleUpdateProfile">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -193,11 +285,22 @@ body { font-family: var(--font-body); background: var(--bg); color: var(--text);
 .nav-link.on { color: var(--coral); font-weight: 600; }
 
 .header-actions { display: flex; align-items: center; gap: 10px; margin-left: 24px; }
-.user-tag { font-size: 14px; color: var(--navy); font-weight: 500; }
+.user-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--coral); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: all .2s;
+}
+.user-avatar:hover { background: var(--coral-dk); transform: scale(1.05); }
 .btn-outline { color: var(--navy); border-color: var(--border); background: transparent; }
 .btn-outline:hover { border-color: var(--navy); color: var(--navy); }
 .btn-fill { background: var(--coral); color: #fff; border: none; font-weight: 600; }
 .btn-fill:hover { background: var(--coral-dk); }
+
+/* Dropdown dark */
+.user-drop { border: 1px solid #e5e9f0 !important; border-radius: 10px !important; }
+.user-drop .el-dropdown-menu__item { padding: 10px 18px; display: flex; align-items: center; gap: 8px; }
 
 /* ===== Page ===== */
 .page-body { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 24px; }

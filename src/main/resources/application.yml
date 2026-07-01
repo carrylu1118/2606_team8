@@ -65,3 +65,20 @@ xml:
   path: E:\develop\flight_db
   monitor:
     interval: 10000
+
+# FlightMaster 全量重建（跑完改 false）
+flight-master-bootstrap:
+  enabled: false
+
+# 值机柜台/登机口回填（跑完改 false）
+flight-detail-populate:
+  enabled: false
+
+# STLS/BLLS/SFLG 明细提取（跑完改 false）
+stls-blls-sflg-populate:
+  enabled: false
+
+# 目的地回填（跑完改 false）
+destination-populate:
+  enabled: false
+

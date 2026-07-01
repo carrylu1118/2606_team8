@@ -25,6 +25,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(                         // 放行路径
                         "/api/auth/login",
                         "/api/auth/register",
+                        "/api/flights/dynamic",
+                        "/api/flights/all",
                         "/api/public/**"
                 );
     }

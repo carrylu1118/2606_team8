@@ -807,6 +807,8 @@ CREATE TABLE flight_master (
                                actual_arrive_time DATETIME COMMENT '实际到港时间',
                                status_code VARCHAR(10) DEFAULT 'PLAN' COMMENT '状态编码：PLAN/DEP/ARR/DLY/CAN/RTN',
                                status_name VARCHAR(20) DEFAULT '计划中' COMMENT '状态中文',
+                               check_counter VARCHAR(50) COMMENT '值机柜台，取自 CKLS_CNTR',
+                               gate VARCHAR(50) COMMENT '登机口，取自 DELT_GATE',
                                create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                                UNIQUE KEY uk_fide (fide),

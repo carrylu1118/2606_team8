@@ -1,7 +1,6 @@
 package com.binair.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -56,10 +55,7 @@ public class FlightMaster {
     /** 状态中文：计划中/已起飞/已到达/延误/取消/返航 */
     private String statusName;
 
-    @TableField(exist = false)  // 不是数据库字段
     private String checkCounter;  // 值机柜台
-
-    @TableField(exist = false)  // 不是数据库字段
     private String gate;          // 登机口
 
     private LocalDateTime createTime;
