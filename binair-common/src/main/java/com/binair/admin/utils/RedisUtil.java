@@ -12,7 +12,7 @@ public class RedisUtil {
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
-    // 存值
+    //存值
     public void set(String key, Object value) {
         redisTemplate.opsForValue().set(key, value);
     }
