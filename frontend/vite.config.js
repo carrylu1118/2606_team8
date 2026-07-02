@@ -10,7 +10,7 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: '../src/main/resources/static',
+    outDir: '../binair-server/src/main/resources/static',
     emptyOutDir: true
   },
   server: {

@@ -157,7 +157,7 @@ onMounted(() => { fetchFlights(); loadCharts() })
 </template>
 
 <style scoped>
-.flights-page { display: flex; flex-direction: column; gap: 20px; }
+.flights-page { display: flex; flex-direction: column; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
 .deck { background: #fff; border: 1px solid #e5e9f0; border-radius: 14px; padding: 26px 28px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
 .deck-head { margin-bottom: 18px; display: flex; align-items: center; gap: 12px; }
 .deck-head h2 { font-size: 18px; font-weight: 700; color: #162b42; }
